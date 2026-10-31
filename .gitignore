@@ -3,7 +3,8 @@
 *.zip
 
 # Build output
-app/bin/
+app/**/bin/
+app/**/obj/
 app/obj/
 app/.vs/
 app/x64/
