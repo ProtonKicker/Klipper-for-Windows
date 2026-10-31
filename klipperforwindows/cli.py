@@ -12,7 +12,18 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import __version__, compat, configgen, detect, paths, process, versions
+from . import __version__, compat, configgen, detect, paths, versions
+# process.py needs psutil (installed into the venv by setup); import it
+# lazily so `setup` itself can run from any Python
+process = None
+
+
+def _process():
+    global process
+    if process is None:
+        from . import process as _p
+        process = _p
+    return process
 
 
 def _say(msg):
@@ -35,9 +46,10 @@ def cmd_setup(args):
 
 
 def cmd_up(args):
+    proc = _process()
     configgen.ensure_configs()
     configgen.sync_data_paths()
-    started = process.start()
+    started = _process().start()
     if not started:
         _say("already running")
         return 0
@@ -47,7 +59,7 @@ def cmd_up(args):
     connected = False
     restarted = False
     while time.time() < deadline:
-        ok, state, msg = process.klippy_api_status()
+        ok, state, msg = proc.klippy_api_status()
         if ok and state == "ready":
             connected = True
             break
@@ -56,10 +68,10 @@ def cmd_up(args):
         if ok and not restarted and state == "error" and \
                 "shutdown" in (msg or "").lower():
             _say("mcu in shutdown state - sending FIRMWARE_RESTART ...")
-            process.klippy_firmware_restart()
+            proc.klippy_firmware_restart()
             restarted = True
         time.sleep(1.0)
-    ok, state, _ = process.klippy_api_status()
+    ok, state, _ = proc.klippy_api_status()
     _say("moonraker api : http://localhost:{} (klippy: {})".format(
         paths.MOONRAKER_PORT, state))
     _say("mainsail      : http://localhost:{}".format(paths.WEB_PORT))
@@ -77,7 +89,7 @@ def load_ui():
 
 
 def cmd_down(args):
-    if process.stop():
+    if _process().stop():
         _say("stopped")
         return 0
     _say("not running")
@@ -85,14 +97,34 @@ def cmd_down(args):
 
 
 def cmd_restart(args):
-    process.stop(timeout=6.0)
+    _process().stop(timeout=6.0)
     time.sleep(0.5)
     args.open = getattr(args, "open", False)
     return cmd_up(args)
 
 
+def cmd_restart_klipper(args):
+    """Restart just the Klipper host (config reload) via Moonraker."""
+    ok, state, msg = _process().klippy_api_status()
+    if not ok:
+        _say("moonraker not reachable - use `restart` for the full stack")
+        return 1
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:{}/printer/restart".format(
+                paths.MOONRAKER_PORT), method="POST", data=b"")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            _say("klipper host restart requested" if r.status == 200
+                 else "restart failed (http {})".format(r.status))
+    except Exception as e:
+        _say("restart failed: {}".format(e))
+        return 1
+    return 0
+
+
 def cmd_killall(args):
-    killed = process.kill_all()
+    killed = _process().kill_all()
     for name, pid in killed:
         _say("killed {} (pid {})".format(name, pid))
     _say("done" if killed else "nothing to kill")
@@ -100,8 +132,9 @@ def cmd_killall(args):
 
 
 def cmd_status(args):
-    state = process.running() or {n: False for n in process.SERVICES}
-    ok, klippy_state, msg = process.klippy_api_status()
+    proc = _process()
+    state = proc.running() or {n: False for n in proc.SERVICES}
+    ok, klippy_state, msg = proc.klippy_api_status()
     pins = versions.load_pins()
     serial = _current_serial()
     updates, errors = versions.check_updates()
@@ -135,7 +168,7 @@ def cmd_status(args):
         return "running" if ok else "stopped"
     _say("Klipper for Windows {}  ({})".format(__version__, "up" if any(
         state.values()) else "down"))
-    for name in process.SERVICES:
+    for name in proc.SERVICES:
         _say("  {:<14} {}".format(name, mark(state.get(name))))
     _say("  klippy state  {}{}".format(
         klippy_state, "" if ok else " (moonraker unreachable)"))
@@ -289,7 +322,7 @@ def cmd_doctor(args):
         oks.append("moonraker.conf present")
     else:
         problems.append("moonraker.conf missing - run setup")
-    if process.klippy_api_status()[0]:
+    if _process().klippy_api_status()[0]:
         oks.append("moonraker reachable, klippy connected")
     else:
         oks.append("stack not running (that is fine; try `up`)")
@@ -331,6 +364,8 @@ def build_parser():
     sub.add_parser("down", help="stop the stack").set_defaults(func=cmd_down)
     sub.add_parser("restart",
                    help="restart the stack").set_defaults(func=cmd_restart)
+    sub.add_parser("restart-klipper", help="restart the Klipper host only"
+                   ).set_defaults(func=cmd_restart_klipper)
     sub.add_parser("killall",
                    help="force-kill everything").set_defaults(func=cmd_killall)
 

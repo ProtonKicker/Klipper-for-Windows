@@ -1,0 +1,140 @@
+<Page
+    x:Class="KlipperForWindows.Pages.DashboardPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Transparent">
+
+    <ScrollViewer Padding="28,20,28,20">
+        <StackPanel Spacing="20" MaxWidth="980" HorizontalAlignment="Left">
+
+            <TextBlock Text="Dashboard" FontSize="26" FontWeight="SemiBold" />
+
+            <!-- Setup banner when the runtime is missing -->
+            <Border x:Name="SetupBanner" Background="#FFFCE8E6" BorderBrush="#F5C6C2"
+                    BorderThickness="1" CornerRadius="8" Padding="16,12" Visibility="Collapsed">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="The Klipper runtime is not installed yet."
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="Run setup once to fetch Klipper, Moonraker, Mainsail and Fluidd. Requires Python 3.10+, Git and zig."
+                               TextWrapping="Wrap" Opacity="0.85" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="RunSetupBtn" Style="{StaticResource AccentButtonStyle}"
+                                Content="Run setup" Click="RunSetup_Click" />
+                        <ProgressRing x:Name="SetupRing" Width="24" Height="24" IsActive="False" />
+                    </StackPanel>
+                    <TextBlock x:Name="SetupLog" FontFamily="Consolas" FontSize="11"
+                               TextWrapping="Wrap" Visibility="Collapsed" MaxHeight="140" />
+                </StackPanel>
+            </Border>
+
+            <!-- Stack card -->
+            <Border Background="#FFFFFFFF" BorderBrush="#E5E5E5" BorderThickness="1"
+                    CornerRadius="8" Padding="18" x:Name="StackCard">
+                <StackPanel Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Ellipse x:Name="StackDot" Width="11" Height="11" Fill="#9A9A9A"
+                                 VerticalAlignment="Center" />
+                        <TextBlock x:Name="StackText" Text="Stopped" FontSize="15"
+                                   FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="StartBtn" Style="{StaticResource AccentButtonStyle}"
+                                Content="Start" Click="Start_Click" MinWidth="96" />
+                        <Button x:Name="StopBtn" Content="Stop" Click="Stop_Click" MinWidth="96" />
+                        <Button x:Name="RestartBtn" Content="Restart" Click="Restart_Click" MinWidth="96" />
+                        <Button x:Name="KillBtn" Content="Force stop" Click="Kill_Click" MinWidth="96" />
+                        <ProgressRing x:Name="ActionRing" Width="22" Height="22" IsActive="False" />
+                    </StackPanel>
+
+                    <Grid ColumnSpacing="12" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="DotKlipper" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
+                            <TextBlock Text="Klipper host" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="DotMoonraker" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
+                            <TextBlock Text="Moonraker API" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="DotMainsail" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
+                            <TextBlock Text="Mainsail web (:8080)" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="DotFluidd" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
+                            <TextBlock Text="Fluidd web (:8081)" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="DotGuard" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
+                            <TextBlock Text="Sleep guard" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="LanText" Text="LAN access: off"
+                                   VerticalAlignment="Center" Opacity="0.7" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Printer card -->
+            <Border Background="#FFFFFFFF" BorderBrush="#E5E5E5" BorderThickness="1"
+                    CornerRadius="8" Padding="18">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Printer" FontSize="17" FontWeight="SemiBold" />
+                    <Grid ColumnSpacing="12" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Klipper state" Opacity="0.7" />
+                        <TextBlock Grid.Column="1" x:Name="KlippyState" Text="unknown" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="1" Text="Message" Opacity="0.7" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="KlippyMsg" Text=""
+                                   TextWrapping="Wrap" MaxHeight="60" Opacity="0.9" />
+                        <TextBlock Grid.Row="2" Text="Printer board" Opacity="0.7" />
+                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <ComboBox x:Name="PortBox" MinWidth="240" PlaceholderText="Select serial port" />
+                            <Button x:Name="RefreshPortsBtn" Content="Refresh" Click="RefreshPorts_Click" />
+                            <Button x:Name="AutoPortBtn" Content="Auto-detect" Click="AutoPort_Click" />
+                            <Button x:Name="ApplyPortBtn" Content="Apply" Click="ApplyPort_Click"
+                                    Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="3" Text="Current port" Opacity="0.7" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="CurrentPort" Text="not set" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Access card -->
+            <Border Background="#FFFFFFFF" BorderBrush="#E5E5E5" BorderThickness="1"
+                    CornerRadius="8" Padding="18">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Access" FontSize="17" FontWeight="SemiBold" />
+                    <ToggleSwitch x:Name="LanToggle" Header="Reachable from other devices on your network"
+                                  Toggled="Lan_Toggled" />
+                    <TextBlock x:Name="LanHint" Text="Only this PC can reach the stack (localhost)."
+                               Opacity="0.7" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <HyperlinkButton x:Name="OpenMainsailLink" Content="Open Mainsail in browser" Click="OpenMainsail_Click" />
+                        <HyperlinkButton x:Name="OpenFluiddLink" Content="Open Fluidd in browser" Click="OpenFluidd_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock x:Name="VersionText" Text="" Opacity="0.55" FontSize="12" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

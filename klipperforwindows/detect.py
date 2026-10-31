@@ -1,6 +1,5 @@
 """USB serial device discovery on Windows (pyserial list_ports)."""
 import re
-import serial.tools.list_ports
 
 # Klipper firmware's own CDC implementation uses the OpenMoko vendor id;
 # RP2040 boards in boot/other firmware use Raspberry Pi's.
@@ -38,6 +37,7 @@ def _describe(port):
 def scan():
     """Returns [{'path': 'COM7', 'description': ...}] candidate printer
     ports: USB serial devices first, then anything else that looks serial."""
+    import serial.tools.list_ports
     usb, other = [], []
     for p in serial.tools.list_ports.comports():
         entry = {"path": p.device, "description": _describe(p)}

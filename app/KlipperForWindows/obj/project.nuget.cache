@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "gNZ/yW/yOZ8=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\tdxt\\OneDrive\\Documents\\GitHub\\Klipper for Windows\\app\\KlipperForWindows\\KlipperForWindows.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\tdxt\\.nuget\\packages\\microsoft.web.webview2\\1.0.2903.40\\microsoft.web.webview2.1.0.2903.40.nupkg.sha512",
+    "C:\\Users\\tdxt\\.nuget\\packages\\microsoft.windows.sdk.buildtools\\10.0.26100.1\\microsoft.windows.sdk.buildtools.10.0.26100.1.nupkg.sha512",
+    "C:\\Users\\tdxt\\.nuget\\packages\\microsoft.windowsappsdk\\1.6.250205002\\microsoft.windowsappsdk.1.6.250205002.nupkg.sha512",
+    "C:\\Users\\tdxt\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.22621.56\\microsoft.windows.sdk.net.ref.10.0.22621.56.nupkg.sha512"
+  ],
+  "logs": []
+}

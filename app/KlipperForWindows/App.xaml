@@ -1,0 +1,17 @@
+<Application
+    x:Class="KlipperForWindows.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedTheme="Light">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- Light-only brand palette -->
+            <Color x:Key="AppAccentColor">#C2504D</Color>
+            <SolidColorBrush x:Key="AppAccentBrush" Color="{StaticResource AppAccentColor}" />
+            <x:Double x:Key="CardContentSpacing">10</x:Double>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
