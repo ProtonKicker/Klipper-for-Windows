@@ -17,7 +17,6 @@ public sealed partial class DashboardPage : Page
         InitializeComponent();
         UiBus.StatusChanged += OnStatus;
         LanToggle.Toggled += (_, _) => { };
-        _ = RefreshPortsAsync();
         OnStatus();
     }
 

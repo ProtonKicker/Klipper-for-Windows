@@ -33,7 +33,14 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        Log("app launched");
+        // Keep the WebView2 profile out of the (possibly OneDrive-synced)
+        // install folder: file-sync locks corrupt browser profiles
+        var dataFolder = System.IO.Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+            "KlipperForWindows", "webview2");
+        System.IO.Directory.CreateDirectory(dataFolder);
+        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", dataFolder);
+        Log("app launched (webview2 profile: " + dataFolder + ")");
         MainWindow = new MainWindow();
         MainWindow.Activate();
     }
