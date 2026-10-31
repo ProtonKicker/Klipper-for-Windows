@@ -1,0 +1,18 @@
+# Reference material (not part of the app)
+.reference/
+*.zip
+
+# Build output
+app/bin/
+app/obj/
+app/.vs/
+app/x64/
+app/ARM64/
+*.user
+
+# Python
+__pycache__/
+*.pyc
+
+# Runtime components live under %LOCALAPPDATA%\KlipperForWindows and the
+# user data folder; nothing from those directories is committed.

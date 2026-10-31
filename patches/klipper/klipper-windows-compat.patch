@@ -1,0 +1,391 @@
+diff --git a/klippy/chelper/__init__.py b/klippy/chelper/__init__.py
+index 087acbd..076e380 100644
+--- a/klippy/chelper/__init__.py
++++ b/klippy/chelper/__init__.py
+@@ -11,11 +11,19 @@ import cffi
+ # c_helper.so compiling
+ ######################################################################
+ 
+-GCC_CMD = "gcc"
++GCC_CMD = os.environ.get("KLFW_CC", "gcc")
+ COMPILE_ARGS = ("-Wall -g -O2 -shared -fPIC"
+                 " -flto -fwhole-program -fno-use-linker-plugin"
+                 " -o %s %s")
+ SSE_FLAGS = "-mfpmath=sse -msse2"
++if os.name == 'nt':
++    # Windows: drop gcc-specific LTO flags, put the Windows compat shim
++    # headers (poll/pipe/fcntl/termios/can/prctl) on the include path, and
++    # link Winsock (WSAPoll/ioctlsocket/socketpair in the shims)
++    COMPILE_ARGS = "-Wall -g -O2 -shared -o %s %s -lws2_32"
++    _compat_include = os.environ.get("KLFW_COMPAT_INCLUDE")
++    if _compat_include:
++        COMPILE_ARGS = '-I"%s" ' % _compat_include + COMPILE_ARGS
+ SOURCE_FILES = [
+     'pyhelper.c', 'serialqueue.c', 'stepcompress.c', 'steppersync.c',
+     'itersolve.c', 'trapq.c', 'pollreactor.c', 'msgblock.c', 'trdispatch.c',
+@@ -265,6 +273,8 @@ def check_build_code(sources, target):
+ 
+ # Check if the current gcc version supports a particular command-line option
+ def check_gcc_option(option):
++    if os.name == 'nt':
++        return False  # /dev/null probe is not portable to cmd.exe
+     cmd = "%s %s -S -o /dev/null -xc /dev/null > /dev/null 2>&1" % (
+         GCC_CMD, option)
+     res = os.system(cmd)
+diff --git a/klippy/extras/statistics.py b/klippy/extras/statistics.py
+index ad694c8..3733ba4 100644
+--- a/klippy/extras/statistics.py
++++ b/klippy/extras/statistics.py
+@@ -28,7 +28,10 @@ class PrinterSysStats:
+         self.last_process_time = ptime
+         if pdiff > 0.:
+             self.total_process_time += pdiff
+-        self.last_load_avg = os.getloadavg()[0]
++        if os.name == 'nt':
++            self.last_load_avg = 0.  # os.getloadavg() is not available
++        else:
++            self.last_load_avg = os.getloadavg()[0]
+         msg = "sysload=%.2f cputime=%.3f" % (self.last_load_avg,
+                                              self.total_process_time)
+         # Get available system memory
+diff --git a/klippy/gcode.py b/klippy/gcode.py
+index f18bde1..8a4be98 100644
+--- a/klippy/gcode.py
++++ b/klippy/gcode.py
+@@ -401,8 +401,9 @@ class GCodeIO:
+         self.fd_handle = None
+         if not self.is_fileinput:
+             self.gcode.register_output_handler(self._respond_raw)
+-            self.fd_handle = self.reactor.register_fd(self.fd,
+-                                                      self._process_data)
++            if self.fd is not None:
++                self.fd_handle = self.reactor.register_fd(
++                    self.fd, self._process_data)
+         self.partial_input = ""
+         self.pending_commands = []
+         self.bytes_read = 0
+@@ -480,7 +481,7 @@ class GCodeIO:
+             self.fd_handle = self.reactor.register_fd(self.fd,
+                                                       self._process_data)
+     def _respond_raw(self, msg):
+-        if self.pipe_is_active:
++        if self.pipe_is_active and self.fd is not None:
+             try:
+                 os.write(self.fd, (msg+"\n").encode())
+             except os.error:
+diff --git a/klippy/klippy.py b/klippy/klippy.py
+index bead204..a2d9928 100644
+--- a/klippy/klippy.py
++++ b/klippy/klippy.py
+@@ -295,6 +295,10 @@ def main():
+         start_args['debuginput'] = options.debuginput
+         debuginput = open(options.debuginput, 'rb')
+         start_args['gcode_fd'] = debuginput.fileno()
++    elif os.name == 'nt':
++        # Windows: no pseudo-tty support; the auxiliary gcode tty is not
++        # needed (clients use the webhooks API socket)
++        start_args['gcode_fd'] = None
+     else:
+         start_args['gcode_fd'] = util.create_pty(options.inputtty)
+     if options.debugoutput:
+diff --git a/klippy/reactor.py b/klippy/reactor.py
+index 3ba351b..13c0670 100644
+--- a/klippy/reactor.py
++++ b/klippy/reactor.py
+@@ -3,7 +3,7 @@
+ # Copyright (C) 2016-2026  Kevin O'Connor <kevin@koconnor.net>
+ #
+ # This file may be distributed under the terms of the GNU GPLv3 license.
+-import os, select, math, time, logging, queue
++import os, select, math, time, logging, queue, socket
+ import greenlet
+ import chelper, util
+ 
+@@ -188,22 +188,30 @@ class SelectReactor:
+         rcb = ReactorCallback(self, callback, waketime)
+         return rcb.completion
+     # Asynchronous (from another thread) callbacks and completions
++    def _pipe_wake(self):
++        # Write to the wakeup pipe/socketpair (thread-safe)
++        try:
++            if os.name == 'nt':
++                # Windows: select() only works on sockets, so the wakeup
++                # pipe is a socketpair (BlockableIOError when full)
++                self._pipe_fds[1].send(b'.')
++            else:
++                os.write(self._pipe_fds[1], b'.')
++        except (os.error, OSError):
++            pass
+     def register_async_callback(self, callback, waketime=NOW):
+         self._async_queue.put_nowait(
+             (ReactorCallback, (self, callback, waketime)))
+-        try:
+-            os.write(self._pipe_fds[1], b'.')
+-        except os.error:
+-            pass
++        self._pipe_wake()
+     def async_complete(self, completion, result):
+         self._async_queue.put_nowait((completion.complete, (result,)))
+-        try:
+-            os.write(self._pipe_fds[1], b'.')
+-        except os.error:
+-            pass
++        self._pipe_wake()
+     def _got_pipe_signal(self, eventtime):
+         try:
+-            os.read(self._pipe_fds[0], 4096)
++            if os.name == 'nt':
++                self._pipe_fds[0].recv(4096)
++            else:
++                os.read(self._pipe_fds[0], 4096)
+         except os.error:
+             pass
+         while 1:
+@@ -213,9 +221,14 @@ class SelectReactor:
+                 break
+             func(*args)
+     def _setup_async_callbacks(self):
+-        self._pipe_fds = os.pipe()
+-        util.set_nonblock(self._pipe_fds[0])
+-        util.set_nonblock(self._pipe_fds[1])
++        if os.name == 'nt':
++            self._pipe_fds = socket.socketpair()
++            self._pipe_fds[0].setblocking(False)
++            self._pipe_fds[1].setblocking(False)
++        else:
++            self._pipe_fds = os.pipe()
++            util.set_nonblock(self._pipe_fds[0])
++            util.set_nonblock(self._pipe_fds[1])
+         self.register_fd(self._pipe_fds[0], self._got_pipe_signal)
+     # Greenlets
+     def _sys_pause(self, waketime):
+@@ -385,8 +398,12 @@ class SelectReactor:
+                 logging.exception("reactor finalize greenlet terminate")
+         self._all_greenlets = []
+         if self._pipe_fds is not None:
+-            os.close(self._pipe_fds[0])
+-            os.close(self._pipe_fds[1])
++            if os.name == 'nt':
++                self._pipe_fds[0].close()
++                self._pipe_fds[1].close()
++            else:
++                os.close(self._pipe_fds[0])
++                os.close(self._pipe_fds[1])
+             self._pipe_fds = None
+ 
+ class PollReactor(SelectReactor):
+diff --git a/klippy/serialhdl.py b/klippy/serialhdl.py
+index a25ce34..0e289e2 100644
+--- a/klippy/serialhdl.py
++++ b/klippy/serialhdl.py
+@@ -3,7 +3,7 @@
+ # Copyright (C) 2016-2021  Kevin O'Connor <kevin@koconnor.net>
+ #
+ # This file may be distributed under the terms of the GNU GPLv3 license.
+-import logging, threading, os
++import logging, threading, os, time
+ import serial
+ 
+ import msgproto, chelper, util
+@@ -11,6 +11,82 @@ import msgproto, chelper, util
+ class error(Exception):
+     pass
+ 
++class WinSerialBridge:
++    """Bridge a pyserial COM port to a socketpair on Windows.
++
++    The C serialqueue needs a selectable fd (poll over sockets); Windows
++    COM handles are neither sockets nor CRT fds.  This wrapper owns the
++    real pyserial port, pumps bytes both ways over a loopback socketpair,
++    and hands the C side the CRT fd of one end (ReadFile/WriteFile work
++    on Winsock sockets, and the C helper's poll/fcntl shims translate CRT
++    fds back to SOCKETs for WSAPoll/ioctlsocket).
++    """
++    def __init__(self, serial_dev):
++        import socket as _socket
++        import msvcrt
++        self._serial = serial_dev
++        self._sock_local, sock_c = _socket.socketpair()
++        self._crt_fd = msvcrt.open_osfhandle(
++            sock_c.fileno(), os.O_RDWR | os.O_NOINHERIT)
++        sock_c.detach()  # the CRT fd now owns the underlying socket
++        self._stop_event = threading.Event()
++        # Wake immediately when data arrives; capped wait avoids busy spin
++        self._serial.timeout = 0.02
++        self._threads = [
++            threading.Thread(target=self._pump_to_socket, daemon=True),
++            threading.Thread(target=self._pump_to_serial, daemon=True)]
++        for t in self._threads:
++            t.start()
++    def _pump_to_socket(self):
++        # serial -> C serialqueue
++        while not self._stop_event.is_set():
++            try:
++                data = self._serial.read(4096)
++            except Exception:
++                break
++            if not data:
++                continue
++            try:
++                self._sock_local.sendall(data)
++            except OSError:
++                break
++        self._stop_event.set()
++    def _pump_to_serial(self):
++        # C serialqueue -> serial
++        self._sock_local.settimeout(0.05)
++        while not self._stop_event.is_set():
++            try:
++                data = self._sock_local.recv(4096)
++            except OSError:
++                if self._stop_event.is_set():
++                    break
++                continue
++            if not data:
++                break
++            try:
++                self._serial.write(data)
++            except Exception:
++                break
++        self._stop_event.set()
++    def fileno(self):
++        return self._crt_fd
++    def close(self):
++        self._stop_event.set()
++        for t in self._threads:
++            t.join(timeout=1.0)
++        try:
++            os.close(self._crt_fd)
++        except OSError:
++            pass
++        try:
++            self._sock_local.close()
++        except OSError:
++            pass
++        try:
++            self._serial.close()
++        except Exception:
++            pass
++
+ class SerialReader:
+     def __init__(self, reactor, mcu_name=""):
+         self.reactor = reactor
+@@ -201,6 +277,8 @@ class SerialReader:
+                 self.reactor.pause(self.reactor.monotonic() + 5.)
+                 continue
+             stk500v2_leave(serial_dev, self.reactor)
++            if os.name == 'nt':
++                serial_dev = WinSerialBridge(serial_dev)
+             ret = self._start_session(serial_dev)
+             if ret:
+                 break
+@@ -347,7 +425,8 @@ class SerialRetryCommand:
+ # Attempt to place an AVR stk500v2 style programmer into normal mode
+ def stk500v2_leave(ser, reactor):
+     logging.debug("Starting stk500v2 leave programmer sequence")
+-    util.clear_hupcl(ser.fileno())
++    if os.name != 'nt':
++        util.clear_hupcl(ser.fileno())
+     origbaud = ser.baudrate
+     # Request a dummy speed first as this seems to help reset the port
+     ser.baudrate = 2400
+diff --git a/klippy/util.py b/klippy/util.py
+index 41f7da9..e59b1fb 100644
+--- a/klippy/util.py
++++ b/klippy/util.py
+@@ -3,8 +3,13 @@
+ # Copyright (C) 2016-2020  Kevin O'Connor <kevin@koconnor.net>
+ #
+ # This file may be distributed under the terms of the GNU GPLv3 license.
+-import sys, os, pty, fcntl, termios, signal, logging, json, time
++import sys, os, signal, logging, json, time
+ import subprocess, traceback, shlex
++if os.name == 'nt':
++    # Windows: pty/fcntl/termios are not available and not needed
++    pty = fcntl = termios = None
++else:
++    import pty, fcntl, termios
+ 
+ 
+ ######################################################################
+@@ -18,11 +23,15 @@ fix_sigint()
+ 
+ # Set a file-descriptor as non-blocking
+ def set_nonblock(fd):
++    if fcntl is None:
++        return
+     fcntl.fcntl(fd, fcntl.F_SETFL
+                 , fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+ 
+ # Clear HUPCL flag
+ def clear_hupcl(fd):
++    if termios is None:
++        return
+     attrs = termios.tcgetattr(fd)
+     attrs[2] = attrs[2] & ~termios.HUPCL
+     try:
+@@ -32,6 +41,8 @@ def clear_hupcl(fd):
+ 
+ # Support for creating a pseudo-tty for emulating a serial port
+ def create_pty(ptyname):
++    if pty is None:
++        raise NotImplementedError("pseudo-ttys are not available on Windows")
+     mfd, sfd = pty.openpty()
+     try:
+         os.unlink(ptyname)
+@@ -119,6 +130,8 @@ def setup_multiprocess_fork_method():
+     if sys.version_info.major >= 3 and sys.version_info.minor < 14:
+         return
+     import multiprocessing
++    if os.name == 'nt':
++        return  # fork is not available on Windows
+     multiprocessing.set_start_method("fork")
+ setup_multiprocess_fork_method()
+ 
+diff --git a/klippy/webhooks.py b/klippy/webhooks.py
+index da18bff..1278e11 100644
+--- a/klippy/webhooks.py
++++ b/klippy/webhooks.py
+@@ -126,10 +126,18 @@ class ServerSocket:
+         if not server_address or is_fileinput:
+             # Do not enable server
+             return
+-        self._remove_socket_file(server_address)
+-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+-        self.sock.setblocking(0)
+-        self.sock.bind(server_address)
++        if os.name == 'nt':
++            # Windows: API server listens on TCP loopback ("host:port")
++            host, port = server_address.rsplit(":", 1)
++            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
++            self.sock.setblocking(0)
++            self.sock.bind((host, int(port)))
++        else:
++            self._remove_socket_file(server_address)
++            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
++            self.sock.setblocking(0)
++            self.sock.bind(server_address)
+         self.sock.listen(1)
+         self.fd_handle = self.reactor.register_fd(
+             self.sock.fileno(), self._handle_accept)
+@@ -162,6 +170,8 @@ class ServerSocket:
+             client.dump_request_log()
+ 
+     def _remove_socket_file(self, file_path):
++        if os.name == 'nt':
++            return
+         try:
+             os.remove(file_path)
+         except OSError:
+@@ -372,8 +382,8 @@ class WebHooks:
+                     'klipper_path': klipper_path,
+                     'python_path': sys.executable,
+                     'process_id': os.getpid(),
+-                    'user_id': os.getuid(),
+-                    'group_id': os.getgid()}
++                    'user_id': os.getuid() if hasattr(os, 'getuid') else 0,
++                    'group_id': os.getgid() if hasattr(os, 'getgid') else 0}
+         start_args = self.printer.get_start_args()
+         for sa in ['log_file', 'config_file', 'software_version', 'cpu_info']:
+             response[sa] = start_args.get(sa)
