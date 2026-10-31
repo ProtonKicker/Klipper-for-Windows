@@ -17,7 +17,7 @@ public sealed partial class SettingsPage : Page
                          "Mainsail and Fluidd natively on Windows — no virtual machine. " +
                          "Klipper's C helper is compiled with zig; the serial port is bridged " +
                          "to the C engine over a loopback socket; Moonraker reaches Klippy over " +
-                         "TCP loopback; both web UIs are served by a local reverse proxy.";
+                         "TCP loopback; the selected web UI is served by a local reverse proxy.";
         RefreshUiChoice();
         UiBus.StatusChanged += RefreshUiChoice;
     }
@@ -73,15 +73,39 @@ public sealed partial class SettingsPage : Page
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
         BusyRing.IsActive = true;
-        DoctorOutput.Text = "Checking for updates...";
+        DoctorOutput.Text = "Checking upstream components (Klipper, Moonraker, Mainsail, Fluidd)...";
         try
         {
-            var outText = await Cli.RunAsync("status");
-            var lines = outText.Split('\n');
-            var updates = lines.Where(l => l.TrimStart().StartsWith("update")).ToList();
-            DoctorOutput.Text = updates.Count > 0
-                ? "Updates available:\n" + string.Join('\n', updates)
-                : "Everything is up to date.";
+            var json = await Cli.RunAsync("status", "--json");
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var pins = root.GetProperty("pins");
+            var lines = new List<string>
+            {
+                "Installed component versions:",
+                "  Klipper    " + pins.GetProperty("klipper").GetString(),
+                "  Moonraker  " + pins.GetProperty("moonraker").GetString(),
+                "  Mainsail   " + pins.GetProperty("mainsail").GetString(),
+                "  Fluidd     " + pins.GetProperty("fluidd").GetString(),
+            };
+            if (root.TryGetProperty("updates", out var ups) &&
+                ups.ValueKind == System.Text.Json.JsonValueKind.Array &&
+                ups.GetArrayLength() > 0)
+            {
+                lines.Add("Updates available (apply with: " +
+                          "python -m klipperforwindows setup --update):");
+                foreach (var u in ups.EnumerateArray())
+                {
+                    lines.Add("  " + u.GetProperty("component").GetString() +
+                              "  " + u.GetProperty("pinned").GetString() +
+                              " -> " + u.GetProperty("latest").GetString());
+                }
+            }
+            else
+            {
+                lines.Add("All components are at their pinned versions (up to date).");
+            }
+            DoctorOutput.Text = string.Join("\n", lines);
         }
         catch (Exception ex)
         {
