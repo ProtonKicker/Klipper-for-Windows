@@ -27,6 +27,8 @@ use Mainsail or Fluidd embedded with one click.
 
 ## Quick start
 
+Prebuilt app: grab [`Klipper-for-Windows-0.1.0.zip` from Releases](https://github.com/ProtonKicker/Klipper-for-Windows/releases/latest) and run **Klipper for Windows.exe** — first launch: press **Run setup** on the Dashboard. Or build/operate from source:
+
 ```powershell
 # one-time: fetch pinned components, build the venv + C helper, verify
 python -m klipperforwindows setup
