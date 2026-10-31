@@ -12,10 +12,8 @@
         </Grid.RowDefinitions>
 
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <ComboBox x:Name="UiSwitch" MinWidth="160" SelectionChanged="UiSwitch_SelectionChanged">
-                <ComboBoxItem Content="Mainsail" Tag="mainsail" />
-                <ComboBoxItem Content="Fluidd" Tag="fluidd" />
-            </ComboBox>
+            <TextBlock x:Name="UiTitle" Text="" FontWeight="SemiBold" FontSize="17"
+                       VerticalAlignment="Center" />
             <Button x:Name="ReloadBtn" Content="Reload" Click="Reload_Click" />
             <Button x:Name="OpenExternalBtn" Content="Open in browser" Click="OpenExternal_Click" />
             <TextBlock x:Name="StatusHint" Text="" VerticalAlignment="Center"

@@ -47,8 +47,10 @@ public sealed partial class DashboardPage : Page
 
         SetDot(DotKlipper, snap.Services.GetValueOrDefault("klipper"));
         SetDot(DotMoonraker, snap.Services.GetValueOrDefault("moonraker"));
-        SetDot(DotMainsail, snap.Services.GetValueOrDefault("web_mainsail"));
-        SetDot(DotFluidd, snap.Services.GetValueOrDefault("web_fluidd"));
+        string ui = snap.Ui == "fluidd" ? "Fluidd" : "Mainsail";
+        int uiPort = snap.Ui == "fluidd" ? 8081 : 8080;
+        WebUILabel.Text = "Web UI — " + ui + " (:" + uiPort + ")";
+        SetDot(DotWebUI, snap.Services.GetValueOrDefault("web_ui"));
         SetDot(DotGuard, snap.Services.GetValueOrDefault("sleep_guard"));
         SetDot(DotWatchdog, snap.Services.GetValueOrDefault("watchdog"));
 

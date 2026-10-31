@@ -128,15 +128,13 @@ def main(argv=None):
         except Exception as e:
             results.append(("[FAIL] {}: {}".format(label, str(e)[:140]), False))
 
-    record("mainsail static (:8080)",
-           lambda: check_static(paths.WEB_PORT, "mainsail"))
-    record("fluidd static (:8081)",
-           lambda: check_static(paths.FLUIDD_PORT, "fluidd"))
+    ui = paths.active_ui()
+    ui_port = paths.ui_port(ui)
+    record("{} static (:{})".format(ui, ui_port),
+           lambda: check_static(ui_port, ui))
     record("moonraker REST (:7125)", check_rest)
-    record("mainsail proxy REST (browser path)",
-           lambda: check_rest(paths.WEB_PORT))
-    record("fluidd proxy REST (browser path)",
-           lambda: check_rest(paths.FLUIDD_PORT))
+    record("{} proxy REST (browser path)".format(ui),
+           lambda: check_rest(ui_port))
 
     import asyncio
     loop = asyncio.new_event_loop()
@@ -146,15 +144,13 @@ def main(argv=None):
             results.append(("[ok]   websocket JSON-RPC (:7125)", True))
         except Exception as e:
             results.append(("[FAIL] websocket :7125: " + str(e)[:140], False))
-        for port, name in ((paths.WEB_PORT, "mainsail"),
-                           (paths.FLUIDD_PORT, "fluidd")):
-            try:
-                loop.run_until_complete(
-                    check_ws("ws://127.0.0.1:{}/websocket".format(port)))
-                results.append(("[ok]   {} proxy websocket".format(name), True))
-            except Exception as e:
-                results.append(("[FAIL] {} proxy websocket: ".format(name)
-                                + str(e)[:120], False))
+        try:
+            loop.run_until_complete(
+                check_ws("ws://127.0.0.1:{}/websocket".format(ui_port)))
+            results.append(("[ok]   {} proxy websocket".format(ui), True))
+        except Exception as e:
+            results.append(("[FAIL] {} proxy websocket: ".format(ui)
+                            + str(e)[:120], False))
     finally:
         loop.close()
 

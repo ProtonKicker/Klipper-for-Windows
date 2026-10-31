@@ -42,7 +42,8 @@ Or skip the console entirely: build/open the GUI
 (`app/KlipperForWindows/KlipperForWindows.csproj`) — the Dashboard has a
 **Run setup** button and a serial-port picker.
 
-- Mainsail: <http://localhost:8080> — Fluidd: <http://localhost:8081>
+- The **selected interface** is served (Mainsail on :8080 by default,
+  Fluidd on :8081 — pick it in Settings; only one runs, to save resources)
 - Moonraker API: <http://localhost:7125> (Orca/PrusaSlicer: `http://localhost:7125`)
 - From other devices: `python -m klipperforwindows lan on`
 

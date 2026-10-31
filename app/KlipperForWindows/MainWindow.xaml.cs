@@ -80,8 +80,7 @@ public sealed partial class MainWindow : Window
             switch (tag)
             {
                 case "dashboard": ContentFrame.Navigate(typeof(DashboardPage)); break;
-                case "mainsail": ContentFrame.Navigate(typeof(FrontendPage), "mainsail"); break;
-                case "fluidd": ContentFrame.Navigate(typeof(FrontendPage), "fluidd"); break;
+                case "printer": ContentFrame.Navigate(typeof(FrontendPage)); break;
                 case "config": ContentFrame.Navigate(typeof(ConfigPage)); break;
                 case "logs": ContentFrame.Navigate(typeof(LogsPage)); break;
                 case "settings": ContentFrame.Navigate(typeof(SettingsPage)); break;

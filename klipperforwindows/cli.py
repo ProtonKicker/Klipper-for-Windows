@@ -51,8 +51,9 @@ def cmd_up(args):
     if not started:
         _say("already running")
         return 0
-    _say("starting klipper, moonraker, mainsail (:{}), fluidd (:{}) ..."
-         .format(paths.WEB_PORT, paths.FLUIDD_PORT))
+    ui = paths.active_ui()
+    _say("starting klipper, moonraker, {} (:{}) ..."
+         .format(ui, paths.ui_port(ui)))
     deadline = time.time() + 45
     connected = False
     restarted = False

@@ -142,7 +142,7 @@ def sc_orphan_port_squatter():
 def sc_down_up_cycle():
     if not process.stop():
         raise AssertionError("stop returned False with a running stack")
-    if _ports_open(paths.MOONRAKER_PORT, paths.WEB_PORT, paths.FLUIDD_PORT):
+    if _ports_open(paths.MOONRAKER_PORT, paths.ui_port(paths.active_ui())):
         raise AssertionError("ports still open after down")
     if process.running() not in (None, {}):
         raise AssertionError("state survived down")

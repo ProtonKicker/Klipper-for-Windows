@@ -22,19 +22,23 @@ import psutil
 
 from . import compat, paths
 
-SERVICES = ("web_mainsail", "web_fluidd", "moonraker", "klipper",
-            "sleep_guard", "watchdog")
-MARKERS = {
-    "klipper": "klippy.py",
-    "moonraker": "moonraker",
-    "web_mainsail": "klipperforwindows.proxy {} ".format(paths.WEB_PORT),
-    "web_fluidd": "klipperforwindows.proxy {} ".format(paths.FLUIDD_PORT),
-    "sleep_guard": "klipperforwindows.keepawake",
-    "watchdog": "klipperforwindows.watchdog",
-}
-_STOP_ORDER = ("watchdog", "web_mainsail", "web_fluidd", "moonraker",
-               "klipper", "sleep_guard")
+SERVICES = ("web_ui", "moonraker", "klipper", "sleep_guard", "watchdog")
+_STOP_ORDER = ("watchdog", "web_ui", "moonraker", "klipper", "sleep_guard")
 WATCHDOG_INTERVAL = 5
+CREATE_FLAGS = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW)
+
+
+def _markers():
+    """Service -> cmdline marker. web_ui's marker depends on the selected
+    interface (only one UI proxy runs at a time)."""
+    return {
+        "klipper": "klippy.py",
+        "moonraker": "moonraker",
+        "web_ui": "klipperforwindows.proxy {} ".format(
+            paths.ui_port(paths.active_ui())),
+        "sleep_guard": "klipperforwindows.keepawake",
+        "watchdog": "klipperforwindows.watchdog",
+    }
 CREATE_FLAGS = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW)
 
 
@@ -114,7 +118,7 @@ def running():
     pids = {name: state.get(name) for name in SERVICES}
     live = _live_cmd([p for p in pids.values() if p])
     return {name: bool(pids.get(name)) and
-            MARKERS[name] in live.get(pids[name], "")
+            _markers()[name] in live.get(pids[name], "")
             for name in SERVICES}
 
 
@@ -127,9 +131,19 @@ def _popen(cmd, **kw):
     return subprocess.Popen(cmd, **defaults)
 
 
+_SCAN_MARKERS = (
+    ("klipper", "klippy.py"),
+    ("moonraker", "moonraker"),
+    # any proxy port: orphans of a non-selected UI must be reaped too
+    ("web_ui", "klipperforwindows.proxy"),
+    ("sleep_guard", "klipperforwindows.keepawake"),
+    ("watchdog", "klipperforwindows.watchdog"),
+)
+
+
 def _scan_service_pids():
     """Pids of running service processes, tracked or not.  A process counts
-    as ours when its marker matches AND its command line references our app
+    as ours when a marker matches AND its command line references our app
     home or data folder (guards against killing unrelated tools)."""
     mine = os.getpid()
     home_token = _home_token()
@@ -145,7 +159,7 @@ def _scan_service_pids():
             continue
         if home_token not in cmd and data_token not in cmd:
             continue
-        for name, marker in MARKERS.items():
+        for name, marker in _SCAN_MARKERS:
             if marker in cmd:
                 out.append((proc.info["pid"], name, cmd))
                 break
@@ -162,7 +176,7 @@ def _reap_orphans():
     pids = [pid for pid, name, cmd in _scan_service_pids()
             if pid not in tracked]
     for pid in pids:
-        _terminate(pid)
+        _terminate_tree(pid)
     if pids:
         deadline = time.time() + 4.0
         live = set(pids)
@@ -170,19 +184,49 @@ def _reap_orphans():
             time.sleep(0.2)
             live = {p for p in live if p in _live_cmd(live)}
         for pid in live:
-            _kill(pid)
+            _kill_tree(pid)
 
 
-def _terminate(pid):
+def _terminate_tree(pid):
+    """Terminate a service process and its whole tree. Services are
+    venv-launcher + base-interpreter child pairs on Windows; killing only
+    the launcher leaves the child holding ports/serial."""
     try:
-        psutil.Process(pid).terminate()
+        parent = psutil.Process(pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return
+    try:
+        children = parent.children(recursive=True)
+    except psutil.NoSuchProcess:
+        children = []
+    for child in children:
+        try:
+            child.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    try:
+        parent.terminate()
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
 
 
-def _kill(pid):
+def _kill_tree(pid):
+    """Force-kill a service process and its whole tree."""
     try:
-        psutil.Process(pid).kill()
+        parent = psutil.Process(pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return
+    try:
+        children = parent.children(recursive=True)
+    except psutil.NoSuchProcess:
+        children = []
+    for child in children:
+        try:
+            child.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    try:
+        parent.kill()
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
 
@@ -274,10 +318,11 @@ def _spawn(name):
         return _spawn_klipper()
     if name == "moonraker":
         return _spawn_moonraker()
-    if name == "web_mainsail":
-        return _spawn_proxy(paths.WEB_PORT, paths.WEB_MAINSAIL)
-    if name == "web_fluidd":
-        return _spawn_proxy(paths.FLUIDD_PORT, paths.WEB_FLUIDD)
+    if name == "web_ui":
+        ui = paths.active_ui()
+        return _spawn_proxy(paths.ui_port(ui),
+                            paths.WEB_MAINSAIL if ui == "mainsail"
+                            else paths.WEB_FLUIDD)
     if name == "sleep_guard":
         return _spawn_keepawake()
     if name == "watchdog":
@@ -374,10 +419,10 @@ def stop(timeout=8.0):
     def _alive():
         live = _live_cmd([p for _, p in pids])
         return [p for _, p in pids if p in live and
-                MARKERS[dict(pids)[p]] in live[p]]
+                _markers()[dict(pids)[p]] in live[p]]
 
     for _, pid in pids:
-        _terminate(pid)
+        _terminate_tree(pid)
     deadline = time.time() + timeout
     while time.time() < deadline:
         if not _alive():
@@ -385,7 +430,7 @@ def stop(timeout=8.0):
         time.sleep(0.2)
     stragglers = [(n, p) for n, p in pids if p in _live_cmd([p])]
     for _, p in stragglers:
-        _kill(p)
+        _kill_tree(p)
     deadline = time.time() + 2.0
     while time.time() < deadline:
         if not [p for _, p in stragglers if p in _live_cmd([p])]:
@@ -411,7 +456,7 @@ def kill_all():
     for pid, name, _cmd in _scan_service_pids():
         targets.setdefault(pid, name)
     for pid in targets:
-        _kill(pid)
+        _kill_tree(pid)
     deadline = time.time() + 3.0
     live = set(targets)
     while live and time.time() < deadline:

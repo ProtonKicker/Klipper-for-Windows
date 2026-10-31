@@ -20,14 +20,9 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItemSeparator />
-                <NavigationViewItem Content="Printer (Mainsail)" Tag="mainsail">
+                <NavigationViewItem Content="Printer" Tag="printer">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8A9;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Printer (Fluidd)" Tag="fluidd">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE9F9;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItemSeparator />

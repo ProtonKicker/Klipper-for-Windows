@@ -107,6 +107,11 @@ def ui_port(ui):
     return WEB_PORT if ui == "mainsail" else FLUIDD_PORT
 
 
+def active_ui():
+    """The selected web interface - the only one served (saves resources)."""
+    return load_settings().get("ui", "mainsail")
+
+
 def ui_url(ui):
     return "http://localhost:{}".format(ui_port(ui))
 
