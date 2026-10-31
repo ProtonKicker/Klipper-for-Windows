@@ -10,3 +10,12 @@ requires-python = ">=3.10"
 
 [tool.setuptools]
 packages = ["klipperforwindows"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".reference", "app"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "W"]
+ignore = ["E501"]

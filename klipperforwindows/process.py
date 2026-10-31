@@ -14,6 +14,7 @@ Modeled on the Klipper for Mac supervisor, adapted for Windows:
 """
 import json
 import os
+import socket
 import subprocess
 import time
 
@@ -22,16 +23,18 @@ import psutil
 from . import compat, paths
 
 SERVICES = ("web_mainsail", "web_fluidd", "moonraker", "klipper",
-            "sleep_guard")
+            "sleep_guard", "watchdog")
 MARKERS = {
     "klipper": "klippy.py",
     "moonraker": "moonraker",
     "web_mainsail": "klipperforwindows.proxy {} ".format(paths.WEB_PORT),
     "web_fluidd": "klipperforwindows.proxy {} ".format(paths.FLUIDD_PORT),
     "sleep_guard": "klipperforwindows.keepawake",
+    "watchdog": "klipperforwindows.watchdog",
 }
-_STOP_ORDER = ("web_mainsail", "web_fluidd", "moonraker", "klipper",
-               "sleep_guard")
+_STOP_ORDER = ("watchdog", "web_mainsail", "web_fluidd", "moonraker",
+               "klipper", "sleep_guard")
+WATCHDOG_INTERVAL = 5
 CREATE_FLAGS = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW)
 
 
@@ -59,6 +62,10 @@ def _load():
 def _clear():
     try:
         paths.STATE.unlink()
+    except OSError:
+        pass
+    try:
+        (paths.RUN / ".downing").unlink()
     except OSError:
         pass
 
@@ -180,58 +187,158 @@ def _kill(pid):
         pass
 
 
-def start():
-    state = running()
-    if state is not None:
-        if any(state.values()):
-            return False
-        _clear()  # crashed/stale: self-heal, then start fresh
-    paths.ensure_dirs()
-    _reap_orphans()
+def _port_owner(port):
+    """PID of the process listening on a loopback port, or None."""
+    try:
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr and conn.laddr.port == port and conn.status == \
+                    psutil.CONN_LISTEN and conn.pid:
+                return conn.pid
+    except (psutil.AccessDenied, OSError):
+        pass
+    return None
 
+
+def _occupied_ports():
+    """{port: pid} for stack ports that cannot be bound right now."""
+    occupied = {}
+    for port in (paths.MOONRAKER_PORT, paths.KLIPPY_API_PORT, paths.WEB_PORT,
+                 paths.FLUIDD_PORT):
+        s = socket.socket()
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            occupied[port] = _port_owner(port)
+        finally:
+            s.close()
+    return occupied
+
+
+def _spawn_klipper():
     py = str(paths.VENV_PY)
     klipper_klippy = paths.KLIPPER / "klippy"
-    env = compat.chelper_env()
-
-    kproc = _popen(
+    return _popen(
         [py, str(klipper_klippy / "klippy.py"),
          "-a", "{}:{}".format(paths.KLIPPY_API_HOST, paths.KLIPPY_API_PORT),
          "-l", str(paths.KLIPPY_LOG),
          str(paths.PRINTER_CFG)],
-        cwd=str(klipper_klippy), env=env,
+        cwd=str(klipper_klippy), env=compat.chelper_env(),
     )
-    mproc = _popen(
+
+
+def _spawn_moonraker():
+    py = str(paths.VENV_PY)
+    return _popen(
         [py, "-m", "moonraker",
          "-d", str(paths.DATA), "-c", str(paths.MOONRAKER_CONF),
          "-l", str(paths.MOONRAKER_LOG)],
-        cwd=str(paths.MOONRAKER), env=env,
+        cwd=str(paths.MOONRAKER), env=compat.build_env(),
     )
-    repo_root = str(paths.REPO_ROOT)
-    wproc = _popen(
-        [py, "-m", "klipperforwindows.proxy", str(paths.WEB_PORT),
-         str(paths.WEB_MAINSAIL), str(paths.MOONRAKER_PORT),
-         "0.0.0.0" if paths.lan_enabled() else "127.0.0.1"],
-        cwd=repo_root,
-        env={**compat.build_env(),
-             "PYTHONPATH": repo_root + os.pathsep +
-                           os.environ.get("PYTHONPATH", "")},
-    )
-    fproc = _popen(
-        [py, "-m", "klipperforwindows.proxy", str(paths.FLUIDD_PORT),
-         str(paths.WEB_FLUIDD), str(paths.MOONRAKER_PORT),
-         "0.0.0.0" if paths.lan_enabled() else "127.0.0.1"],
-        cwd=repo_root,
-        env={**compat.build_env(),
-             "PYTHONPATH": repo_root + os.pathsep +
-                           os.environ.get("PYTHONPATH", "")},
-    )
-    sproc = _popen([py, "-m", "klipperforwindows.keepawake"],
-                   cwd=repo_root,
-                   env={**compat.build_env(),
-                        "PYTHONPATH": repo_root})
 
-    procs = {"klipper": kproc, "moonraker": mproc, "web_mainsail": wproc,
-             "web_fluidd": fproc, "sleep_guard": sproc}
+
+def _spawn_proxy(port, directory):
+    py = str(paths.VENV_PY)
+    repo_root = str(paths.REPO_ROOT)
+    return _popen(
+        [py, "-m", "klipperforwindows.proxy", str(port),
+         str(directory), str(paths.MOONRAKER_PORT),
+         "0.0.0.0" if paths.lan_enabled() else "127.0.0.1"],
+        cwd=repo_root,
+        env={**compat.build_env(),
+             "PYTHONPATH": repo_root + os.pathsep +
+                           os.environ.get("PYTHONPATH", "")},
+    )
+
+
+def _spawn_keepawake():
+    py = str(paths.VENV_PY)
+    repo_root = str(paths.REPO_ROOT)
+    return _popen([py, "-m", "klipperforwindows.keepawake"],
+                  cwd=repo_root,
+                  env={**compat.build_env(),
+                       "PYTHONPATH": repo_root})
+
+
+def _spawn_watchdog():
+    py = str(paths.VENV_PY)
+    repo_root = str(paths.REPO_ROOT)
+    return _popen([py, "-m", "klipperforwindows.watchdog"],
+                  cwd=repo_root,
+                  env={**compat.build_env(),
+                       "PYTHONPATH": repo_root})
+
+
+def _spawn(name):
+    """Spawn one service by name (used by start and the watchdog)."""
+    if name == "klipper":
+        return _spawn_klipper()
+    if name == "moonraker":
+        return _spawn_moonraker()
+    if name == "web_mainsail":
+        return _spawn_proxy(paths.WEB_PORT, paths.WEB_MAINSAIL)
+    if name == "web_fluidd":
+        return _spawn_proxy(paths.FLUIDD_PORT, paths.WEB_FLUIDD)
+    if name == "sleep_guard":
+        return _spawn_keepawake()
+    if name == "watchdog":
+        return _spawn_watchdog()
+    raise ValueError("unknown service " + name)
+
+
+def respawn(names):
+    """Respawn dead services in place, updating the state file. Used by
+    the watchdog (which must survive its own recovery)."""
+    state = _load() or {}
+    spawned = {}
+    for name in names:
+        if name == "watchdog":
+            continue  # the watchdog never respawns itself
+        spawned[name] = _spawn(name)
+    if not spawned:
+        return False
+    state.update({n: p.pid for n, p in spawned.items()})
+    state["boot_id"] = _boot_id()
+    paths.RUN.mkdir(parents=True, exist_ok=True)
+    with open(paths.STATE, "w") as f:
+        json.dump(state, f, indent=2)
+    # fail fast for the fresh children
+    time.sleep(3.0)
+    dead = [n for n, p in spawned.items() if p.poll() is not None]
+    if dead:
+        for n in dead:
+            log = paths.KLIPPY_LOG if n == "klipper" else (
+                paths.MOONRAKER_LOG if n == "moonraker" else None)
+            hint = ""
+            if log and log.exists():
+                tail = log.read_text(encoding="utf-8", errors="replace") \
+                    .splitlines()[-3:]
+                hint = "\n".join(tail)
+            print("[!] respawned '{}' exited immediately. {}".format(n, hint))
+        return False
+    return True
+
+
+def start():
+    state = running()
+    if state is not None and all(state.values()):
+        return False  # fully running
+    if state is not None:
+        # partially dead (crashed klippy, moonraker, ...): recover by
+        # restarting the whole stack
+        stop(timeout=8)
+    paths.ensure_dirs()
+    _reap_orphans()
+    occupied = _occupied_ports()
+    if occupied:
+        detail = ", ".join(
+            "{} (pid {})".format(p, pid if pid else "unknown")
+            for p, pid in sorted(occupied.items()))
+        print("[!] ports already in use, not starting: {}. "
+              "Run `killall` or close the other program.".format(detail))
+        _clear()
+        return False
+
+    procs = {name: _spawn(name) for name in SERVICES}
     _save(procs)
     # Fail fast if a child died on startup (e.g. port already in use)
     time.sleep(3.0)
@@ -255,6 +362,13 @@ def stop(timeout=8.0):
     state = _load()
     if state is None:
         return False
+    # tell the watchdog a manual stop is in progress so it exits instead
+    # of "recovering" the stack we are deliberately stopping
+    try:
+        paths.RUN.mkdir(parents=True, exist_ok=True)
+        (paths.RUN / ".downing").write_text("1")
+    except OSError:
+        pass
     pids = [(n, state.get(n)) for n in _STOP_ORDER if state.get(n)]
 
     def _alive():
@@ -294,7 +408,7 @@ def kill_all():
         for name in SERVICES:
             if state.get(name):
                 targets[state[name]] = name
-    for pid, name, cmd in _scan_service_pids():
+    for pid, name, _cmd in _scan_service_pids():
         targets.setdefault(pid, name)
     for pid in targets:
         _kill(pid)

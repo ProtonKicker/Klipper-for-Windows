@@ -241,7 +241,12 @@ def invalidate_stale_build():
     for name in ("c_helper.so", "_temp_c_helper.so"):
         p = paths.KLIPPER / "klippy" / "chelper" / name
         if p.exists():
-            p.unlink()
+            try:
+                p.unlink()
+            except PermissionError:
+                # the running stack has the library loaded; it will be
+                # reused as-is (still a valid load check)
+                pass
 
 
 def test_chelper_build():

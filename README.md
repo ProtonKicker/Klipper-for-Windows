@@ -104,17 +104,48 @@ Data lives in `Documents\Klipper for Windows` (config, gcodes, logs,
 database, web); the runtime lives in `%LOCALAPPDATA%\KlipperForWindows`
 (venv, pinned checkouts). Both are relocatable (`data --set`, `KLFW_HOME`).
 
-## Reliability notes (Moonraker connectivity)
+## Reliability
 
 The app self-heals the classic failure modes:
 
+- **Crashed services**: a built-in **watchdog** service (visible on the
+  Dashboard) respawns dead klipper/moonraker/proxies in place — at most
+  5 recoveries per 30 minutes (bounded, logged to `logs/watchdog.log`),
+  and it sends `FIRMWARE_RESTART` automatically when the MCU reports
+  shutdown after a crash.
 - **MCU left in shutdown** (crash/kill): `up` detects it and sends
   `FIRMWARE_RESTART` automatically.
-- **Orphaned services** squatting ports/serial: reaped on `up`.
+- **Orphaned services** squatting ports/serial: reaped on `up`. Unknown
+  port squatters are refused with `ports already in use (pid …)` instead
+  of a silent half-start.
 - **Dead children**: `up` fails fast with the offending log tail instead
   of hanging.
 - **Stale supervisor state** after reboot: state.json is boot-scoped and
   self-clears.
+
+### Test suites
+
+```powershell
+python -m klipperforwindows selftest [--full]   # live endpoints Mainsail/Fluidd hit
+python -m klipperforwindows scenarios            # fault injection, the app must self-heal
+python -m klipperforwindows doctor               # installation + upstream purity
+```
+
+`selftest` checks static UIs, REST, websockets (direct and through both
+proxies) and — with `--full` — a real gcode round-trip
+(upload → print → complete). `scenarios` injects failures on purpose:
+port squatters, killed klipper/moonraker, stale state, idempotency —
+9 scenarios, all required to self-heal. The suite found and fixed real
+bugs (partial-start recovery, watchdog self-kill, missing port guard).
+
+### Upstream purity (Klipco-ready)
+
+`doctor` enforces that the pristine upstream checkouts contain **only**
+modifications from the reviewed `patches/*.patch` files — any hand-edit
+drift fails the check. The component registry in
+`klipperforwindows/versions.py` + `installer.py` is per-component
+(repo, pin, patch set), so adding another firmware distribution later is
+a data change, not a code change.
 
 ## Development
 

@@ -142,7 +142,10 @@ def main(argv):
     port, directory, upstream = int(argv[1]), argv[2], int(argv[3])
     bind = argv[4] if len(argv) > 4 else "127.0.0.1"
     UIPandler.upstream_port = upstream
-    handler = lambda *a, **kw: UIPandler(*a, directory=directory, **kw)
+
+    def handler(*a, **kw):
+        return UIPandler(*a, directory=directory, **kw)
+
     with Server((bind, port), handler) as httpd:
         httpd.serve_forever()
 

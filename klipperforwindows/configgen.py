@@ -99,8 +99,8 @@ def apply_lan(enabled):
                      text, count=1)
 
     def _repl(m):
-        items = [l for l in m.group(0).splitlines()[1:] if l.strip()]
-        keep = [l for l in items if l.strip() not in LAN_CIDRS]
+        items = [ln for ln in m.group(0).splitlines()[1:] if ln.strip()]
+        keep = [ln for ln in items if ln.strip() not in LAN_CIDRS]
         if enabled:
             keep += ["    " + c for c in LAN_CIDRS]
         return "trusted_clients:\n" + "\n".join(keep) + "\n"

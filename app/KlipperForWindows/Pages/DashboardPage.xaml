@@ -56,6 +56,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Ellipse x:Name="DotKlipper" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
@@ -77,7 +78,11 @@
                             <Ellipse x:Name="DotGuard" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
                             <TextBlock Text="Sleep guard" VerticalAlignment="Center" />
                         </StackPanel>
-                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="LanText" Text="LAN access: off"
+                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="DotWatchdog" Width="9" Height="9" Fill="#9A9A9A" VerticalAlignment="Center" />
+                            <TextBlock Text="Crash watchdog" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="3" x:Name="LanText" Text="LAN access: off"
                                    VerticalAlignment="Center" Opacity="0.7" />
                     </Grid>
                 </StackPanel>

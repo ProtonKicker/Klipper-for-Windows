@@ -21,8 +21,6 @@ def lan_ip():
 
 
 def _describe(port):
-    hwid = (port.hwid or "").upper()
-    vid = "VID:PID={}:{:04X}".format(port.vid, port.pid) if port.vid else ""
     if port.vid == 0x1D50 and port.pid == 0x614E:
         desc = "Klipper firmware (CDC)"
     elif port.vid == 0x2E8A:

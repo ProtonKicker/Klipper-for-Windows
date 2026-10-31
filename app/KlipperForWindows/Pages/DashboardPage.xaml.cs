@@ -50,6 +50,7 @@ public sealed partial class DashboardPage : Page
         SetDot(DotMainsail, snap.Services.GetValueOrDefault("web_mainsail"));
         SetDot(DotFluidd, snap.Services.GetValueOrDefault("web_fluidd"));
         SetDot(DotGuard, snap.Services.GetValueOrDefault("sleep_guard"));
+        SetDot(DotWatchdog, snap.Services.GetValueOrDefault("watchdog"));
 
         KlippyState.Text = snap.KlippyConnected ? snap.KlippyState : "disconnected";
         KlippyState.Foreground = new SolidColorBrush(

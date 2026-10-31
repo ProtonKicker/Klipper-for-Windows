@@ -26,8 +26,6 @@ def _default_data():
         candidate = Path(onedrive) / "Documents"
         if candidate.is_dir():
             return candidate / "Klipper for Windows"
-    legacy = Path(onedrive.replace("OneDrive - ", "OneDrive"),
-                  "Documents") if False else None
     return profile / "Documents" / "Klipper for Windows"
 
 

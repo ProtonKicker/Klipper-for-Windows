@@ -5,9 +5,7 @@ be scriptable (`status --json`, `serial --json`).
 """
 import argparse
 import json
-import os
 import subprocess
-import sys
 import time
 import webbrowser
 from pathlib import Path
@@ -146,8 +144,8 @@ def cmd_status(args):
         "state_message": msg,
         "pins": {k: pins[k] for k in
                  ("klipper", "moonraker", "mainsail", "fluidd")},
-        "updates": [{"component": c, "pinned": p, "latest": l}
-                    for c, p, l in updates],
+        "updates": [{"component": c, "pinned": pinned, "latest": latest}
+                    for c, pinned, latest in updates],
         "update_errors": errors,
         "serial": serial,
         "data": str(paths.DATA),
@@ -292,11 +290,38 @@ def cmd_doctor(args):
         oks.append("prerequisites present (python/git/zig)")
     except SystemExit as e:
         problems.append(str(e))
+    expected_modified = {
+        "klipper": {
+            "klippy/chelper/__init__.py", "klippy/extras/statistics.py",
+            "klippy/gcode.py", "klippy/klippy.py", "klippy/reactor.py",
+            "klippy/serialhdl.py", "klippy/util.py", "klippy/webhooks.py",
+        },
+        "moonraker": {
+            "moonraker/components/klippy_connection.py",
+            "moonraker/components/machine.py", "moonraker/components/extensions.py",
+            "moonraker/server.py",
+        },
+    }
     for comp, dest in (("klipper", paths.KLIPPER),
                        ("moonraker", paths.MOONRAKER)):
         if (dest / ".git").exists():
             oks.append("{} checkout present @ {}".format(
                 comp, _short_sha(dest)))
+            # upstream purity guard: nothing may be modified beyond the
+            # reviewed Windows compat patch (guards hand-edits and drift)
+            out = subprocess.run(
+                ["git", "-C", str(dest), "status", "--porcelain"],
+                capture_output=True, text=True).stdout
+            modified = {line[3:].strip() for line in out.splitlines()
+                        if line[:2].strip() in ("M", "MM")}
+            unexpected = modified - expected_modified.get(comp, set())
+            if unexpected:
+                problems.append(
+                    "{} upstream drift (files changed outside the patch): {}"
+                    .format(comp, ", ".join(sorted(unexpected))))
+            else:
+                oks.append("{} upstream clean (only windows patch files)"
+                           .format(comp))
         else:
             problems.append("{} checkout missing - run setup".format(comp))
     if paths.VENV_PY.exists():
@@ -340,6 +365,16 @@ def _short_sha(dest):
         return out.stdout.strip() or "?"
     except Exception:
         return "?"
+
+
+def cmd_selftest(args):
+    from .tests import selftest
+    return selftest.main(["--full"] if args.full else [])
+
+
+def cmd_scenarios(args):
+    from .tests import scenarios
+    return scenarios.main(["--only", args.only] if args.only else [])
 
 
 def build_parser():
@@ -405,6 +440,17 @@ def build_parser():
 
     sub.add_parser("doctor",
                    help="verify the installation").set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("selftest",
+                       help="live endpoint test (stack must be up)")
+    p.add_argument("--full", action="store_true",
+                   help="also run a real gcode round-trip")
+    p.set_defaults(func=cmd_selftest)
+
+    p = sub.add_parser("scenarios",
+                       help="fault-injection robustness scenarios")
+    p.add_argument("--only", help="run one scenario by name prefix")
+    p.set_defaults(func=cmd_scenarios)
     return ap
 
 
