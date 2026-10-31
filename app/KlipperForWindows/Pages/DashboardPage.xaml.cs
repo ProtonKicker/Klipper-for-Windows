@@ -17,6 +17,7 @@ public sealed partial class DashboardPage : Page
         InitializeComponent();
         UiBus.StatusChanged += OnStatus;
         LanToggle.Toggled += (_, _) => { };
+        _ = RefreshPortsAsync();
         OnStatus();
     }
 
@@ -63,6 +64,11 @@ public sealed partial class DashboardPage : Page
         KlippyMsg.Text = snap.StateMessage;
 
         CurrentPort.Text = snap.Serial ?? "not set";
+        if (PortBox.SelectedItem is null && _ports is { Count: > 0 } &&
+            snap.Serial is not null)
+        {
+            TrySelectPort(snap.Serial);
+        }
         LanText.Text = "LAN access: " + (snap.Lan ? "on" : "off");
         LanToggle.Toggled -= Lan_Toggled;
         LanToggle.IsOn = snap.Lan;
@@ -115,10 +121,29 @@ public sealed partial class DashboardPage : Page
 
     private async Task RefreshPortsAsync()
     {
+        var previous = (PortBox.SelectedItem as string)?.Split(' ')[0];
         _ports = await Cli.SerialListAsync();
         PortBox.Items.Clear();
         foreach (var p in _ports)
             PortBox.Items.Add($"{p.Path}  —  {p.Description}");
+        // the reload drops the selection; restore it so the box never
+        // appears blank while a port is configured
+        var wanted = previous ?? UiBus.Latest?.Serial;
+        if (wanted is not null)
+            TrySelectPort(wanted);
+    }
+
+    private void TrySelectPort(string serial)
+    {
+        for (int i = 0; i < PortBox.Items.Count; i++)
+        {
+            if (PortBox.Items[i] is string item &&
+                item.Split(' ')[0].Equals(serial, StringComparison.OrdinalIgnoreCase))
+            {
+                PortBox.SelectedIndex = i;
+                return;
+            }
+        }
     }
 
     private void RefreshPorts_Click(object sender, RoutedEventArgs e) => _ = RefreshPortsAsync();

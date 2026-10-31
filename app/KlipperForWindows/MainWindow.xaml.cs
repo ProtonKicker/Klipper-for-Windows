@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
         {
             AppWindow.SetIcon(System.IO.Path.Combine(
                 AppContext.BaseDirectory, "Assets", "appicon.ico"));
+            // explicit size: content-driven sizing lets popups (combo
+            // dropdowns) resize the whole window
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 840));
         }
         catch { }
         try

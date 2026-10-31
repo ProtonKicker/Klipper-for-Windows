@@ -107,7 +107,8 @@
                                    TextWrapping="Wrap" MaxHeight="60" Opacity="0.9" />
                         <TextBlock Grid.Row="2" Text="Printer board" Opacity="0.7" />
                         <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                            <ComboBox x:Name="PortBox" MinWidth="240" PlaceholderText="Select serial port" />
+                            <ComboBox x:Name="PortBox" Width="380" MinWidth="240"
+                                      PlaceholderText="Select serial port" />
                             <Button x:Name="RefreshPortsBtn" Content="Refresh" Click="RefreshPorts_Click" />
                             <Button x:Name="AutoPortBtn" Content="Auto-detect" Click="AutoPort_Click" />
                             <Button x:Name="ApplyPortBtn" Content="Apply" Click="ApplyPort_Click"

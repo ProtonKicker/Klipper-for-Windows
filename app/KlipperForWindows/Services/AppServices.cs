@@ -54,6 +54,7 @@ public static class Cli
 
     public static async Task<string> RunAsync(params string[] args)
     {
+        App.Log("RunAsync start: " + string.Join(' ', args));
         var psi = new ProcessStartInfo
         {
             FileName = PythonExe,
@@ -65,8 +66,22 @@ public static class Cli
             RedirectStandardError = true,
         };
         using var proc = Process.Start(psi)!;
-        string stdout = await proc.StandardOutput.ReadToEndAsync();
-        await proc.WaitForExitAsync();
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+        var exitTask = proc.WaitForExitAsync();
+        var done = await Task.WhenAny(exitTask,
+            Task.Delay(TimeSpan.FromSeconds(30)));
+        if (done != exitTask)
+        {
+            App.Log("RunAsync TIMEOUT: " + string.Join(' ', args));
+            try { proc.Kill(true); } catch { }
+            throw new TimeoutException("CLI did not finish within 30s: " +
+                string.Join(' ', args));
+        }
+        string stdout = await stdoutTask;
+        await stderrTask;
+        App.Log("RunAsync done: " + string.Join(' ', args) +
+                " exit=" + proc.ExitCode);
         return stdout;
     }
 
