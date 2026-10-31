@@ -5,7 +5,7 @@
     Background="Transparent">
 
     <ScrollViewer Padding="28,20,28,20">
-        <StackPanel Spacing="20" MaxWidth="980" HorizontalAlignment="Left">
+        <StackPanel Spacing="20" MaxWidth="1080" HorizontalAlignment="Center">
 
             <TextBlock Text="Dashboard" FontSize="26" FontWeight="SemiBold" />
 

@@ -5,7 +5,7 @@
     Background="Transparent">
 
     <ScrollViewer Padding="28,20,28,20">
-        <StackPanel Spacing="20" MaxWidth="820" HorizontalAlignment="Left">
+        <StackPanel Spacing="20" MaxWidth="900" HorizontalAlignment="Center">
             <TextBlock Text="Settings" FontSize="26" FontWeight="SemiBold" />
 
             <Border Background="#FFFFFFFF" BorderBrush="#E5E5E5" BorderThickness="1"
