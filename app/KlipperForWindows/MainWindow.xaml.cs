@@ -28,6 +28,12 @@ public sealed partial class MainWindow : Window
         Title = "Klipper for Windows";
         try
         {
+            AppWindow.SetIcon(System.IO.Path.Combine(
+                AppContext.BaseDirectory, "Assets", "appicon.ico"));
+        }
+        catch { }
+        try
+        {
             SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         }
         catch { }

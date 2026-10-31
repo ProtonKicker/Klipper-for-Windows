@@ -14,6 +14,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Klipper for Windows</AssemblyName>
+    <ApplicationIcon>Assets/appicon.ico</ApplicationIcon>
     <Version>0.1.0</Version>
     <Product>Klipper for Windows</Product>
   </PropertyGroup>
@@ -24,6 +25,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="app.manifest">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets/appicon.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
