@@ -1,20 +1,49 @@
 """Generates the initial user-editable configs under the data folder."""
 import re
+import shutil
 import time
 
 from . import paths
 
-# Starter config = the upstream BTT SKR Pico example (the board this app
-# was developed against), with the serial placeholder and the Moonraker-
-# required extras appended. Users replace it with their printer's config.
+# Starter config: a bench-safe minimal config so the FIRST start reaches
+# "ready" even on a bare board (a full printer example would shutdown
+# immediately with "ADC out of range" on unconnected thermistor pins).
+# The matching full board example is copied next to it as
+# example-<board>.cfg for users to grow into; replace with your real
+# printer config either way.
 STARTER_EXAMPLE = "generic-bigtreetech-skr-pico-v1.0.cfg"
 
 HEADER = """\
-# Klipper for Windows starter config, derived from upstream {example} on {date}.
-# Replace this whole file with the printer.cfg for your machine if you have
-# one (see https://github.com/Klipper3d/klipper/tree/master/config).
+# Klipper for Windows starter config ({date}).
+# This minimal config starts safely on a bare board (no motors/heaters
+# attached). Replace it with your printer's real config when ready - a
+# full example for the BTT SKR Pico is next to this file as
+# example-skr-pico.cfg, and more are in the Klipper repo:
+# https://github.com/Klipper3d/klipper/tree/master/config
 # Tip: `klipperforwindows serial` lists connected USB printer boards, and the
 # app's Setup page can pick the port for you.
+
+"""
+
+STARTER_BODY = """\
+[mcu]
+serial: REPLACE_WITH_YOUR_PRINTER_PORT
+restart_method: command
+
+[printer]
+kinematics: none
+max_velocity: 100
+max_accel: 1000
+
+[virtual_sdcard]
+path: {gcodes_dir}
+
+[pause_resume]
+
+[display_status]
+
+[idle_timeout]
+timeout: 600
 
 """
 
@@ -114,17 +143,19 @@ def apply_lan(enabled):
 
 
 def starter_cfg_text():
-    src = paths.KLIPPER / "config" / STARTER_EXAMPLE
-    if not src.exists():
-        return None
-    text = re.sub(r"serial: [^\n]*",
-                  "serial: REPLACE_WITH_YOUR_PRINTER_PORT",
-                  src.read_text(), count=1)
-    extras = "" if "[virtual_sdcard]" in text else EXTRAS.format(
+    text = STARTER_BODY.format(
         gcodes_dir=str(paths.DATA / "gcodes").replace("\\", "/"))
-    macros = "" if "[gcode_macro PAUSE]" in text else MACROS
-    return HEADER.format(example=STARTER_EXAMPLE,
-                         date=time.strftime("%Y-%m-%d")) + text + extras + macros
+    return HEADER.format(date=time.strftime("%Y-%m-%d")) + text + MACROS
+
+
+def copy_board_example():
+    """Ship the full board example next to printer.cfg as a template."""
+    src = paths.KLIPPER / "config" / STARTER_EXAMPLE
+    dst = paths.CONFIG / "example-skr-pico.cfg"
+    if src.exists() and not dst.exists():
+        shutil.copy2(src, dst)
+        return dst
+    return None
 
 
 def sync_virtual_sdcard():
@@ -170,12 +201,11 @@ def sync_data_paths():
 def ensure_configs():
     paths.ensure_dirs()
     created = []
+    example = copy_board_example()
+    if example:
+        created.append(example)
     if not paths.PRINTER_CFG.exists():
         text = starter_cfg_text()
-        if text is None:
-            raise SystemExit(
-                "No starter example found in the Klipper checkout. Run "
-                "'klipperforwindows setup' first, then again.")
         paths.PRINTER_CFG.write_text(text, encoding="utf-8")
         created.append(paths.PRINTER_CFG)
     if not paths.MOONRAKER_CONF.exists():

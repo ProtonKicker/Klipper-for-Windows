@@ -286,66 +286,91 @@ def cmd_doctor(args):
     problems = []
     oks = []
     from . import installer
-    try:
-        installer.check_prereqs()
-        oks.append("prerequisites present (python/git/zig)")
-    except SystemExit as e:
-        problems.append(str(e))
-    expected_modified = {
-        "klipper": {
-            "klippy/chelper/__init__.py", "klippy/extras/statistics.py",
-            "klippy/gcode.py", "klippy/klippy.py", "klippy/reactor.py",
-            "klippy/serialhdl.py", "klippy/util.py", "klippy/webhooks.py",
-        },
-        "moonraker": {
-            "moonraker/components/klippy_connection.py",
-            "moonraker/components/machine.py", "moonraker/components/extensions.py",
-            "moonraker/server.py",
-        },
-    }
-    for comp, dest in (("klipper", paths.KLIPPER),
-                       ("moonraker", paths.MOONRAKER)):
-        if (dest / ".git").exists():
-            oks.append("{} checkout present @ {}".format(
-                comp, _short_sha(dest)))
-            # upstream purity guard: nothing may be modified beyond the
-            # reviewed Windows compat patch (guards hand-edits and drift)
-            out = subprocess.run(
-                ["git", "-C", str(dest), "status", "--porcelain"],
-                capture_output=True, text=True).stdout
-            modified = {line[3:].strip() for line in out.splitlines()
-                        if line[:2].strip() in ("M", "MM")}
-            unexpected = modified - expected_modified.get(comp, set())
-            if unexpected:
-                problems.append(
-                    "{} upstream drift (files changed outside the patch): {}"
-                    .format(comp, ", ".join(sorted(unexpected))))
-            else:
-                oks.append("{} upstream clean (only windows patch files)"
-                           .format(comp))
+    if not paths.PORTABLE:
+        try:
+            installer.check_prereqs()
+            oks.append("prerequisites present (python/git/zig)")
+        except SystemExit as e:
+            problems.append(str(e))
+    if paths.PORTABLE:
+        refs = paths.APP_HOME / "runtime" / "refs.json"
+        if refs.exists():
+            import json as _json
+            data = _json.loads(refs.read_text(encoding="utf-8"))
+            for comp in ("klipper", "moonraker"):
+                entry = data.get(comp, {})
+                oks.append("{} bundled @ {} ({})".format(
+                    comp, entry.get("sha", "?")[:8], entry.get("pin", "?")))
         else:
-            problems.append("{} checkout missing - run setup".format(comp))
+            problems.append("bundled runtime refs missing")
+    else:
+        expected_modified = {
+            "klipper": {
+                "klippy/chelper/__init__.py", "klippy/extras/statistics.py",
+                "klippy/gcode.py", "klippy/klippy.py", "klippy/reactor.py",
+                "klippy/serialhdl.py", "klippy/util.py", "klippy/webhooks.py",
+            },
+            "moonraker": {
+                "moonraker/components/klippy_connection.py",
+                "moonraker/components/machine.py",
+                "moonraker/components/extensions.py",
+                "moonraker/server.py",
+            },
+        }
+        for comp, dest in (("klipper", paths.KLIPPER),
+                           ("moonraker", paths.MOONRAKER)):
+            if (dest / ".git").exists():
+                oks.append("{} checkout present @ {}".format(
+                    comp, _short_sha(dest)))
+                # upstream purity guard: nothing may be modified beyond the
+                # reviewed Windows compat patch (guards hand-edits/drift)
+                out = subprocess.run(
+                    ["git", "-C", str(dest), "status", "--porcelain"],
+                    capture_output=True, text=True).stdout
+                modified = {line[3:].strip() for line in out.splitlines()
+                            if line[:2].strip() in ("M", "MM")}
+                unexpected = modified - expected_modified.get(comp, set())
+                if unexpected:
+                    problems.append(
+                        "{} upstream drift (files changed outside the "
+                        "patch): {}".format(comp, ", ".join(
+                            sorted(unexpected))))
+                else:
+                    oks.append("{} upstream clean (only windows patch files)"
+                               .format(comp))
+            else:
+                problems.append("{} checkout missing - run setup".format(
+                    comp))
     if paths.VENV_PY.exists():
         oks.append("venv present")
         if compat.test_chelper_build():
             oks.append("c_helper compiles and loads")
     else:
         problems.append("venv missing - run setup")
-    if compat.find_zig():
+    if paths.PORTABLE:
+        oks.append("bundled runtime - no compiler needed")
+    elif compat.find_zig():
         oks.append("zig compiler found")
     else:
         problems.append("zig not found (winget install zig.zig)")
-    if paths.WEB_MAINSAIL.exists() and paths.WEB_FLUIDD.exists():
-        oks.append("mainsail + fluidd fetched")
+    web_ready = paths.WEB_MAINSAIL.exists() and paths.WEB_FLUIDD.exists()
+    if web_ready or (paths.PORTABLE and
+                     (paths.APP_HOME / "runtime" / "web").is_dir()):
+        oks.append("mainsail + fluidd present" + (
+            "" if web_ready else " (bundled; seeded on first start)"))
     else:
         problems.append("web UIs missing - run setup")
     if paths.PRINTER_CFG.exists():
         oks.append("printer.cfg present (serial: {})".format(
             _current_serial()))
+    elif paths.PORTABLE:
+        oks.append("configs will be generated on first start")
     else:
         problems.append("printer.cfg missing - run setup")
     if paths.MOONRAKER_CONF.exists():
         oks.append("moonraker.conf present")
+    elif paths.PORTABLE:
+        oks.append("moonraker.conf will be generated on first start")
     else:
         problems.append("moonraker.conf missing - run setup")
     if _process().klippy_api_status()[0]:

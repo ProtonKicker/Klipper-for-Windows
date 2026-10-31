@@ -144,6 +144,31 @@ if os.name == "nt":
         except OSError:
             pass
 
+    # Klippy uses ffi_lib.free (and friends) as GC destructors for C
+    # allocations; cffi resolves symbols with GetProcAddress, which only
+    # sees the DLL's own exports - CRT symbols like free/malloc are not
+    # exported by zig-built DLLs. Fall back to ucrtbase for them.
+    try:
+        import cffi.api as _cffi_api
+        _orig_dlopen = _cffi_api.FFI.dlopen
+
+        def _dlopen_with_crt(self, libname, flags=0):
+            lib = _orig_dlopen(self, libname, flags)
+            crt = ctypes.CDLL("ucrtbase.dll")
+
+            class _Lib:
+                def __getattr__(self, name):
+                    try:
+                        return getattr(lib, name)
+                    except AttributeError:
+                        return getattr(crt, name)
+
+            return _Lib()
+
+        _cffi_api.FFI.dlopen = _dlopen_with_crt
+    except Exception:
+        pass
+
     import asyncio
     try:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -182,8 +207,17 @@ def find_zig():
 def build_env():
     """Environment for klippy/moonraker/proxy children."""
     env = dict(os.environ)
-    vbin = str(paths.VENV_DIR / "Scripts")
-    env["PATH"] = vbin + os.pathsep + env.get("PATH", "")
+    if paths.PORTABLE:
+        # bundled interpreter + libsodium dir; the klipperforwindows package
+        # and its patches live in app\, so children can always import it
+        pydir = str(paths.VENV_DIR)
+        env["PATH"] = pydir + os.pathsep + env.get("PATH", "")
+        repo = str(paths.REPO_ROOT)
+        env["PYTHONPATH"] = repo + (os.pathsep + env["PYTHONPATH"]
+                                    if env.get("PYTHONPATH") else "")
+    else:
+        vbin = str(paths.VENV_DIR / "Scripts")
+        env["PATH"] = vbin + os.pathsep + env.get("PATH", "")
     env.setdefault("KLFW_HOME", str(paths.APP_HOME))
     env.setdefault("KLFW_DATA", str(paths.DATA))
     return env
@@ -202,11 +236,17 @@ def chelper_env():
 
 
 def ensure_runtime_shims():
-    """Write sitecustomize.py into the venv and install libsodium.dll."""
-    sp = paths.VENV_DIR / "Lib" / "site-packages"
+    """Write sitecustomize.py into the site-packages and install
+    libsodium.dll next to the interpreter (layout-aware)."""
+    if paths.PORTABLE:
+        sp = paths.VENV_DIR.parent / "site-packages"
+        dll_dir = paths.VENV_DIR
+    else:
+        sp = paths.VENV_DIR / "Lib" / "site-packages"
+        dll_dir = paths.VENV_DIR / "Scripts"
     sp.mkdir(parents=True, exist_ok=True)
     (sp / "sitecustomize.py").write_text(SITECUSTOMIZE_SRC, encoding="utf-8")
-    dll = paths.VENV_DIR / "Scripts" / "libsodium.dll"
+    dll = dll_dir / "libsodium.dll"
     if not dll.exists():
         _install_libsodium(dll)
 
@@ -233,7 +273,10 @@ def _install_libsodium(dest):
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
     finally:
-        tmp.unlink(missing_ok=True)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def invalidate_stale_build():

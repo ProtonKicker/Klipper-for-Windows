@@ -84,16 +84,33 @@ public sealed partial class DashboardPage : Page
         dot.Fill = new SolidColorBrush(on ? Color.FromArgb(255, 46, 160, 67)
                                          : Color.FromArgb(255, 154, 154, 154));
 
-    private async Task RunBusyAsync(Func<Task<string>> action)
+    private async Task RunBusyAsync(Func<Task<string>> action,
+        Func<StatusSnapshot, bool> verify = null, string what = "")
     {
         if (_busy) return;
         _busy = true;
         OnStatus();
         try
         {
-            await action();
+            var output = await action();
             await Task.Delay(800);
-            UiBus.Publish(await Cli.StatusAsync());
+            var snap = await Cli.StatusAsync();
+            UiBus.Publish(snap);
+            if (verify is not null && snap is not null && !verify(snap))
+            {
+                // surface WHY the action did not take effect (e.g. ports
+                // in use, service exited) instead of failing silently
+                var tail = output.Length > 800 ? "..." + output[^800..] : output;
+                var dlg = new ContentDialog
+                {
+                    Title = what + " did not complete",
+                    Content = string.IsNullOrWhiteSpace(tail)
+                        ? "No output from the command." : tail,
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await dlg.ShowAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -113,9 +130,12 @@ public sealed partial class DashboardPage : Page
         }
     }
 
-    private void Start_Click(object sender, RoutedEventArgs e) => _ = RunBusyAsync(Cli.UpAsync);
-    private void Stop_Click(object sender, RoutedEventArgs e) => _ = RunBusyAsync(Cli.DownAsync);
-    private void Restart_Click(object sender, RoutedEventArgs e) => _ = RunBusyAsync(Cli.RestartAsync);
+    private void Start_Click(object sender, RoutedEventArgs e) =>
+        _ = RunBusyAsync(Cli.UpAsync, s => s.StackUp, "Start");
+    private void Stop_Click(object sender, RoutedEventArgs e) =>
+        _ = RunBusyAsync(Cli.DownAsync, s => !s.StackUp, "Stop");
+    private void Restart_Click(object sender, RoutedEventArgs e) =>
+        _ = RunBusyAsync(Cli.RestartAsync, s => s.StackUp, "Restart");
     private void Kill_Click(object sender, RoutedEventArgs e) => _ = RunBusyAsync(async () =>
         await Cli.RunAsync("killall"));
 

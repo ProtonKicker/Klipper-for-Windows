@@ -87,13 +87,26 @@ def set_data(path):
 
 set_data(_resolve_data())
 
-KLIPPER = APP_HOME / "klipper"
-MOONRAKER = APP_HOME / "moonraker"
-VENV_DIR = APP_HOME / "venv"
-VENV_PY = VENV_DIR / "Scripts" / "python.exe"
+# Portable mode: a self-contained install (built by scripts/build_portable.py
+# and laid down by the installer) ships its own Python, the patched upstream
+# checkouts and the klipperforwindows package - no venv/git/zig needed.
+PORTABLE = (APP_HOME / "runtime" / "python" / "python.exe").exists()
+
+if PORTABLE:
+    KLIPPER = APP_HOME / "runtime" / "klipper"
+    MOONRAKER = APP_HOME / "runtime" / "moonraker"
+    VENV_DIR = APP_HOME / "runtime" / "python"
+    VENV_PY = VENV_DIR / "python.exe"
+    REPO_ROOT = APP_HOME / "app"
+else:
+    KLIPPER = APP_HOME / "klipper"
+    MOONRAKER = APP_HOME / "moonraker"
+    VENV_DIR = APP_HOME / "venv"
+    VENV_PY = VENV_DIR / "Scripts" / "python.exe"
+    REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCKFILE = APP_HOME / "lockfile.json"
-# Patch files applied on top of the pristine upstream checkouts
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# Patch files applied on top of the pristine upstream checkouts (present in
+# both modes: repo checkout in dev, shipped in app\patches for portable)
 KLIPPER_PATCH = REPO_ROOT / "patches" / "klipper" / "klipper-windows-compat.patch"
 MOONRAKER_PATCH = REPO_ROOT / "patches" / "moonraker" / "moonraker-windows-compat.patch"
 WINCOMPAT_INCLUDE = REPO_ROOT / "patches" / "wincompat"
@@ -125,3 +138,12 @@ def ensure_dirs():
     for d in (APP_HOME, DATA, CONFIG, RUN, LOGS, WEB, DATA / "gcodes",
               DATA / "database"):
         d.mkdir(parents=True, exist_ok=True)
+    if PORTABLE:
+        # first run on a machine: seed the web UIs from the bundled runtime
+        import shutil
+        rt_web = APP_HOME / "runtime" / "web"
+        if rt_web.is_dir():
+            for ui in ("mainsail", "fluidd"):
+                src, dst = rt_web / ui, WEB / ui
+                if src.is_dir() and not dst.exists():
+                    shutil.copytree(src, dst)

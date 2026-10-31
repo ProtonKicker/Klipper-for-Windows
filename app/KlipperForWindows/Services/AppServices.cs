@@ -44,7 +44,16 @@ public static class Cli
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "KlipperForWindows");
 
-    public static string PythonExe => Path.Combine(AppHome, "venv", "Scripts", "python.exe");
+    public static string PythonExe
+    {
+        get
+        {
+            // self-contained installs bundle the interpreter under runtime\
+            var portable = Path.Combine(AppHome, "runtime", "python", "python.exe");
+            if (File.Exists(portable)) return portable;
+            return Path.Combine(AppHome, "venv", "Scripts", "python.exe");
+        }
+    }
 
     public static bool Installed => File.Exists(PythonExe);
 
